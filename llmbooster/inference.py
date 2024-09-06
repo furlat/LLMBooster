@@ -16,8 +16,6 @@ from models import LLMOutput, LLMPromptContext
 
 
 
-
-
 class AIUtilities:
     def __init__(self):
         load_dotenv()  # Load environment variables from .env file

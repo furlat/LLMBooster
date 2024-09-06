@@ -8,6 +8,9 @@ import os
 from dotenv import load_dotenv
 #Import time
 import time
+from openai.types.chat import ChatCompletionToolParam
+from anthropic.types.beta.prompt_caching import PromptCachingBetaToolParam
+from anthropic.types.message_create_params import ToolChoiceToolChoiceTool
 
 class RequestLimits(BaseModel):
     max_requests_per_minute: int = Field(default=50,description="The maximum number of requests per minute for the API")
@@ -36,29 +39,26 @@ class ParallelAIUtilities:
         return results
 
     async def _run_openai_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:
-        #human readable timestamp
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
         requests_file = self._prepare_requests_file(prompts, "openai")
         results_file = f'openai_results_{timestamp}.jsonl'
-        config = self._create_config(prompts[0], requests_file, results_file)
+        config = self._create_oai_completion_config(prompts[0], requests_file, results_file)
         if config:
             await process_api_requests_from_file(config)
             return self._parse_results_file(results_file, prompts)
         return []
 
     async def _run_anthropic_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:
-        requests_file = self._prepare_requests_file(prompts, "anthropic")
-        #human readable timestamp
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+        requests_file = self._prepare_requests_file(prompts, "anthropic")
         results_file = f'anthropic_results_{timestamp}.jsonl'
-        config = self._create_config(prompts[0], requests_file, results_file)
+        config = self._create_anthropic_completion_config(prompts[0], requests_file, results_file)
         if config:
             await process_api_requests_from_file(config)
             return self._parse_results_file(results_file, prompts)
         return []
 
     def _prepare_requests_file(self, prompts: List[LLMPromptContext], client: str) -> str:
-        #human readable timestamp
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
         requests = []
         for prompt in prompts:
@@ -77,25 +77,38 @@ class ParallelAIUtilities:
     def _convert_prompt_to_request(self, prompt: LLMPromptContext, client: str) -> Optional[Dict[str, Any]]:
         if client == "openai":
             messages = prompt.oai_messages
-            return {
+            request = {
                 "model": prompt.llm_config.model,
                 "messages": messages,
                 "max_tokens": prompt.llm_config.max_tokens,
                 "temperature": prompt.llm_config.temperature,
             }
+            if prompt.oai_response_format:
+                request["response_format"] = prompt.oai_response_format
+            if prompt.llm_config.response_format == "tool" and prompt.structured_output:
+                tool = prompt.get_tool()
+                if tool:
+                    request["tools"] = [tool]
+                    request["tool_choice"] = {"type": "function", "function": {"name": prompt.structured_output.schema_name}}
+            return request
         elif client == "anthropic":
             system_content, messages = prompt.anthropic_messages
-            return {
+            request = {
                 "model": prompt.llm_config.model,
                 "max_tokens": prompt.llm_config.max_tokens,
                 "temperature": prompt.llm_config.temperature,
                 "messages": messages,
                 "system": system_content if system_content else None
             }
+            if prompt.llm_config.response_format == "tool" and prompt.structured_output:
+                tool = prompt.get_tool()
+                if tool:
+                    request["tools"] = [tool]
+                    request["tool_choice"] = ToolChoiceToolChoiceTool(name=prompt.structured_output.schema_name, type="tool")
+            return request
         return None
 
-    def _create_config(self, prompt: LLMPromptContext, requests_file: str, results_file: str) -> Optional[OAIApiFromFileConfig]:
-        
+    def _create_oai_completion_config(self, prompt: LLMPromptContext, requests_file: str, results_file: str) -> Optional[OAIApiFromFileConfig]:
         if prompt.llm_config.client == "openai" and self.openai_key:
             return OAIApiFromFileConfig(
                 requests_filepath=requests_file,
@@ -108,7 +121,10 @@ class ParallelAIUtilities:
                 max_attempts=5,
                 logging_level=20,
             )
-        elif prompt.llm_config.client == "anthropic" and self.anthropic_key:
+        return None
+
+    def _create_anthropic_completion_config(self, prompt: LLMPromptContext, requests_file: str, results_file: str) -> Optional[OAIApiFromFileConfig]:
+        if prompt.llm_config.client == "anthropic" and self.anthropic_key:
             return OAIApiFromFileConfig(
                 requests_filepath=requests_file,
                 save_filepath=results_file,
@@ -154,8 +170,5 @@ class ParallelAIUtilities:
             print(f"Debug: Unexpected client type: {original_prompt.llm_config.client}")
             return LLMOutput(raw_result={"error": "Unexpected client type"}, completion_kwargs=request_data)
 
-    async def run_parallel_ai_tool_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:
-        # Implement this method similar to run_parallel_ai_completion
-        # but with tool-specific logic
-        return []
+\
 

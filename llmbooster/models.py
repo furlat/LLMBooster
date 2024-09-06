@@ -67,7 +67,7 @@ class StructuredTool(BaseModel):
             )
         return None
 
-    def get_anthropic_tool(self) -> Optional[ToolParam]:
+    def get_anthropic_tool(self) -> Optional[PromptCachingBetaToolParam]:
         if self.json_schema:
             return PromptCachingBetaToolParam(
                 name=self.schema_name,
@@ -186,7 +186,7 @@ class LLMPromptContext(BaseModel):
             return self.update_history(history=[new_message])
        
     
-    def get_tool(self) -> Union[ChatCompletionToolParam, ToolParam, None]:
+    def get_tool(self) -> Union[ChatCompletionToolParam, PromptCachingBetaToolParam, None]:
         if not self.structured_output:
             return None
         if self.llm_config.client == "openai":
@@ -354,6 +354,11 @@ class LLMOutput(BaseModel):
                 if isinstance(first_content, dict):
                     if first_content.get("type") == "text":
                         content = first_content.get("text")
+                        if content:
+                            parsed_json = self._parse_json_string(content)
+                            if parsed_json:
+                                    json_object = GeneratedJsonObject(name="parsed_content", object=parsed_json)
+                                    content = None  # Set content to None when we have a parsed JSON object
                     elif first_content.get("type") == "tool_use":
                         name = first_content.get("name", "unknown_tool")
                         json_object = GeneratedJsonObject(name=name, object=first_content.get("input", {}))

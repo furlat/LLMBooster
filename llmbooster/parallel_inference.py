@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import List, Dict, Any, Tuple, Optional, Literal
 from pydantic import BaseModel, Field
-from models import LLMPromptContext, LLMOutput, LLMConfig
+from message_models import LLMPromptContext, LLMOutput, LLMConfig
 from oai_parallel import process_api_requests_from_file, OAIApiFromFileConfig
 import os
 from dotenv import load_dotenv

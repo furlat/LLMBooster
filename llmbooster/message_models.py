@@ -184,6 +184,38 @@ class LLMPromptContext(BaseModel):
         else:
             assert not self.history
             return self.update_history(history=[new_message])
+        
+    
+    def add_chat_turn_history(self, llm_output:'LLMOutput') -> 'LLMPromptContext':
+        """
+        Safely adds a user-assistant chat turn to the history based on the LLMOutput.
+        
+        Args:
+            llm_output (LLMOutput): The output from the LLM completion.
+        
+        Returns:
+            LLMPromptContext: A new instance with the updated history.
+        """
+        if llm_output.completion_kwargs is None or "messages" not in llm_output.completion_kwargs:
+            raise ValueError("LLMOutput does not contain message history")
+
+        messages = llm_output.completion_kwargs["messages"]
+        user_message = next((msg["content"] for msg in reversed(messages) if msg["role"] == "user"), None)
+        
+        if user_message is None:
+            raise ValueError("No user message found in the completion history")
+
+        assistant_response = llm_output.str_content or json.dumps(llm_output.json_object.object) if llm_output.json_object else "{}"
+
+        new_turn = [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": assistant_response}
+        ]
+        
+        if self.history is None:
+            return self.model_copy(update={"history": new_turn})
+        else:
+            return self.model_copy(update={"history": self.history + new_turn})
        
     
     def get_tool(self) -> Union[ChatCompletionToolParam, PromptCachingBetaToolParam, None]:

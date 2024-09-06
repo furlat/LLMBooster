@@ -115,7 +115,6 @@ async def process_api_requests_from_file(
             "content-type": "application/json",
             "anthropic-beta": "prompt-caching-2024-07-31"
         }
-        print(f"Anthropic headers: {request_header}")
 
     # initialize trackers
     queue_of_requests_to_retry = asyncio.Queue()

@@ -37,7 +37,7 @@ OPENAI_CONTEXT_LENGTH=128000
 #Anthropic credentials
 ANTHROPIC_API_KEY=sk-xxxx
 ANTHROPIC_CONTEXT_LENGTH=200000
-ANTHROPIC_MODEL=claude-3-5-sonnet-2024062
+ANTHROPIC_MODEL=claude-3-5-sonnet-20240620
 ```
 
 ## Usage
@@ -60,7 +60,7 @@ async def main():
         LLMPromptContext(
             system_string="You are a helpful assistant.",
             new_message=f"Tell me a short joke about the number {i}.",
-            llm_config=LLMConfig(client="openai", model="gpt-4", max_tokens=50)
+            llm_config=LLMConfig(client="openai", model="gpt-4o-mini", max_tokens=50)
         ) for i in range(10)
     ]
 
@@ -85,13 +85,13 @@ prompts = [
     LLMPromptContext(
         system_string="You are a helpful assistant.",
         new_message=f"Tell me a short joke about the letter {chr(65+i)}.",
-        llm_config=LLMConfig(client="openai", model="gpt-4", max_tokens=50)
+        llm_config=LLMConfig(client="openai", model="gpt-4o-mini", max_tokens=50)
     ) for i in range(5)
 ] + [
     LLMPromptContext(
         system_string="You are a helpful assistant.",
         new_message=f"Tell me a short joke about the number {i}.",
-        llm_config=LLMConfig(client="anthropic", model="claude-3-sonnet", max_tokens=50)
+        llm_config=LLMConfig(client="anthropic", model="claude-3-5-sonnet-20240620", max_tokens=50)
     ) for i in range(5)
 ]
 
@@ -121,7 +121,7 @@ structured_tool = StructuredTool(
 prompt = LLMPromptContext(
     system_string="You are a helpful assistant.",
     new_message="Tell me a programmer joke.",
-    llm_config=LLMConfig(client="openai", model="gpt-4", response_format="structured_output"),
+    llm_config=LLMConfig(client="openai", model="gpt-4o-mini", response_format="structured_output"),
     structured_output=structured_tool
 )
 

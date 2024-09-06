@@ -1,6 +1,6 @@
 # LLMBooster
 
-LLMBooster is a Python library designed for efficient, parallel processing of large language model (LLM) requests. It supports both OpenAI and Anthropic APIs, allowing for high-throughput, rate-limited interactions with these services.
+LLMBooster is a Python library designed for efficient, parallel processing of large language model (LLM) requests. It supports both OpenAI and Anthropic APIs, offering features like prompt caching, structured outputs, and various response formats.
 
 ## Features
 
@@ -8,9 +8,11 @@ LLMBooster is a Python library designed for efficient, parallel processing of la
 - Support for OpenAI and Anthropic APIs
 - Rate limiting to respect API constraints
 - Efficient handling of token usage
+- Prompt caching for improved performance (Anthropic)
+- Multiple response formats: text, JSON, structured output, and tool-based responses
 - Customizable request configurations
 - Error handling and request retrying
-- Structured output parsing
+- Conversation history management with caching support
 
 ## Installation
 
@@ -36,7 +38,6 @@ OPENAI_CONTEXT_LENGTH=128000
 ANTHROPIC_API_KEY=sk-xxxx
 ANTHROPIC_CONTEXT_LENGTH=200000
 ANTHROPIC_MODEL=claude-3-5-sonnet-2024062
-
 ```
 
 ## Usage
@@ -49,7 +50,7 @@ Here's a simple example of how to use LLMBooster for parallel processing:
 import asyncio
 from dotenv import load_dotenv
 from parallel_inference import ParallelAIUtilities
-from models import LLMPromptContext, LLMConfig
+from message_models import LLMPromptContext, LLMConfig
 
 async def main():
     load_dotenv()
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 
 LLMBooster supports various configuration options and features:
 
-1. **Mixed API Requests**: You can process requests for both OpenAI and Anthropic in a single batch:
+1. **Mixed API Requests**: Process requests for both OpenAI and Anthropic in a single batch:
 
 ```python
 prompts = [
@@ -97,10 +98,10 @@ prompts = [
 results = await parallel_ai.run_parallel_ai_completion(prompts)
 ```
 
-2. **Structured Output**: You can request structured JSON responses:
+2. **Structured Output**: Request structured JSON responses:
 
 ```python
-from models import StructuredTool
+from message_models import StructuredTool
 
 json_schema = {
     "type": "object",
@@ -131,7 +132,7 @@ print(result[0].json_object)
 3. **Rate Limiting**: LLMBooster automatically handles rate limiting based on the configuration:
 
 ```python
-from models import RequestLimits
+from parallel_inference import RequestLimits
 
 oai_limits = RequestLimits(max_requests_per_minute=60, max_tokens_per_minute=40000)
 anthropic_limits = RequestLimits(max_requests_per_minute=50, max_tokens_per_minute=100000, provider="anthropic")
@@ -139,84 +140,54 @@ anthropic_limits = RequestLimits(max_requests_per_minute=50, max_tokens_per_minu
 parallel_ai = ParallelAIUtilities(oai_request_limits=oai_limits, anthropic_request_limits=anthropic_limits)
 ```
 
+4. **Growing History with Cache (Anthropic)**: Utilize Anthropic's prompt caching feature for efficient conversation history management:
+
+```python
+from message_models import LLMPromptContext, LLMConfig
+from parallel_inference import ParallelAIUtilities
+
+async def test_growing_history_with_cache():
+    parallel_ai = ParallelAIUtilities()
+    
+    base_prompt = LLMPromptContext(
+        system_string="You are a helpful AI assistant. Here's some context about prompt caching: <file_contents>...</file_contents>",
+        new_message="Let's have a conversation about prompt caching. What is it and how does it work?",
+        llm_config=LLMConfig(client="anthropic", model="claude-3-sonnet-20240307", use_cache=True, max_tokens=1000)
+    )
+
+    # First turn
+    result1 = await parallel_ai.run_parallel_ai_completion([base_prompt])
+    print("Turn 1 (System content cached)")
+    print(f"Response: {result1[0].str_content}")
+    print(f"Usage: {result1[0].usage}")
+
+    # Second turn
+    prompt2 = base_prompt.add_chat_turn_history(result1[0])
+    prompt2.new_message = "How does prompt caching improve performance?"
+    result2 = await parallel_ai.run_parallel_ai_completion([prompt2])
+    print("\nTurn 2 (System content + partial history cached)")
+    print(f"Response: {result2[0].str_content}")
+    print(f"Usage: {result2[0].usage}")
+
+    # Third turn
+    prompt3 = prompt2.add_chat_turn_history(result2[0])
+    prompt3.new_message = "What are some best practices for using prompt caching?"
+    result3 = await parallel_ai.run_parallel_ai_completion([prompt3])
+    print("\nTurn 3 (System content + more history cached)")
+    print(f"Response: {result3[0].str_content}")
+    print(f"Usage: {result3[0].usage}")
+
+asyncio.run(test_growing_history_with_cache())
+```
+
+This example demonstrates how to use the `add_chat_turn_history` method to build a conversation while leveraging Anthropic's prompt caching feature. The `use_cache=True` parameter in the `LLMConfig` enables caching, which can significantly reduce token usage and improve response times in multi-turn conversations.
+
 ## Key Components
 
-### ParallelAIUtilities
-
-The main class for handling parallel LLM requests. It manages the processing of requests for both OpenAI and Anthropic APIs.
-
-
-```17:24:llmbooster/parallel_inference.py
-class ParallelAIUtilities:
-    def __init__(self, oai_request_limits: RequestLimits = RequestLimits(), anthropic_request_limits: RequestLimits = RequestLimits(provider="anthropic")):
-        load_dotenv()
-        self.openai_key = os.getenv("OPENAI_KEY")
-        self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        self.oai_request_limits = oai_request_limits
-        self.anthropic_request_limits = anthropic_request_limits
-
-```
-
-
-### LLMPromptContext
-
-Represents a single LLM request, including the prompt, configuration, and optional structured output settings.
-
-
-```97:106:llmbooster/models.py
-class LLMPromptContext(BaseModel):
-    system_string: Optional[str] = None
-    history: Optional[List[Dict[str, str]]] = None
-    new_message: str
-    prefill: str = Field(default="Here's the valid JSON object response:```json", description="prefill assistant response with an instruction")
-    postfill: str = Field(default="\n\nPlease provide your response in JSON format.", description="postfill user response with an instruction")
-    structured_output : Optional[StructuredTool] = None
-    use_schema_instruction: bool = False
-    llm_config: LLMConfig
-
-```
-
-
-### LLMConfig
-
-Defines the configuration for an LLM request, including the client, model, and response format.
-
-
-```86:91:llmbooster/models.py
-class LLMConfig(BaseModel):
-    client: Literal["openai", "azure_openai", "anthropic", "vllm"]
-    model: Optional[str] = None
-    max_tokens: int = 4096
-    temperature: float = 0
-    response_format: Literal["json_beg", "text","json_object","structured_output","tool"] = "text"
-```
-
-
-### StructuredTool
-
-Defines the schema for structured output responses.
-
-
-```36:52:llmbooster/models.py
-class StructuredTool(BaseModel):
-    """ Supported type by OpenAI Structured Output:
-    String, Number, Boolean, Integer, Object, Array, Enum, anyOf
-    Root must be Object, not anyOf
-    Not supported by OpenAI Structured Output: 
-    For strings: minLength, maxLength, pattern, format
-    For numbers: minimum, maximum, multipleOf
-    For objects: patternProperties, unevaluatedProperties, propertyNames, minProperties, maxProperties
-    For arrays: unevaluatedItems, contains, minContains, maxContains, minItems, maxItems, uniqueItems
-    oai_reference: https://platform.openai.com/docs/guides/structured-outputs/how-to-use """
-
-    json_schema: Optional[Dict[str, Any]] = None
-    schema_name: str = Field(default = "generate_structured_output")
-    schema_description: str = Field(default ="Generate a structured output based on the provided JSON schema.")
-    instruction_string: str = Field(default = "Please follow this JSON schema for your response:")
-    strict_schema: bool = True
-
-```
-
+- `ParallelAIUtilities`: Main class for handling parallel LLM requests.
+- `LLMPromptContext`: Represents a single LLM request, including prompt, configuration, and optional structured output settings.
+- `LLMConfig`: Defines the configuration for an LLM request.
+- `StructuredTool`: Defines the schema for structured output responses.
 
 ## Error Handling and Retrying
 
@@ -224,9 +195,10 @@ LLMBooster includes built-in error handling and request retrying. Failed request
 
 ## Performance Considerations
 
-- LLMBooster uses asynchronous processing to maximize throughput.
+- Asynchronous processing maximizes throughput.
 - Requests are batched by client (OpenAI or Anthropic) for efficient processing.
 - Token usage is tracked to ensure compliance with rate limits.
+- Anthropic's prompt caching feature can significantly improve performance in multi-turn conversations.
 
 ## Contributing
 
@@ -235,7 +207,6 @@ Contributions to LLMBooster are welcome! Please submit pull requests or open iss
 ## License
 
 LLMBooster is released under the MIT License. See the LICENSE file for details.
-
 
 ```1:22:LICENSE
 MIT License
@@ -259,8 +230,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
 ```
-
 
 This README provides a comprehensive overview of the LLMBooster library, focusing on its parallel processing capabilities and usage examples. It covers the main features, installation, configuration, basic and advanced usage, key components, error handling, and performance considerations.

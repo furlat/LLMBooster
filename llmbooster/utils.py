@@ -19,8 +19,7 @@ from typing import Union, Optional, List, Tuple, Literal, Dict, Any
 import json
 import re
 import tiktoken
-
-
+import ast
 
 def parse_json_string(content: str) -> Optional[Dict[str, Any]]:
     # Remove any leading/trailing whitespace and newlines
@@ -29,17 +28,25 @@ def parse_json_string(content: str) -> Optional[Dict[str, Any]]:
     # Remove markdown code block syntax if present
     cleaned_content = re.sub(r'^```(?:json)?\s*|\s*```$', '', cleaned_content, flags=re.MULTILINE)
     
-    # Attempt to find a JSON object, allowing for newlines and escaped quotes
-    json_match = re.search(r'(\{[^{}]*\{.*?\}[^{}]*\}|\{.*?\})', cleaned_content, re.DOTALL)
-    if json_match:
+    try:
+        # First, try to parse as JSON
+        return json.loads(cleaned_content)
+    except json.JSONDecodeError:
         try:
-            # Normalize newlines and unescape quotes
-            json_str = json_match.group(1).replace('\n', '').replace('\\"', '"')
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            pass
+            # If JSON parsing fails, try to evaluate as a Python literal
+            return ast.literal_eval(cleaned_content)
+        except (SyntaxError, ValueError):
+            # If both methods fail, try to find and parse a JSON-like structure
+            json_match = re.search(r'(\{[^{}]*\{.*?\}[^{}]*\}|\{.*?\})', cleaned_content, re.DOTALL)
+            if json_match:
+                try:
+                    # Normalize newlines, replace single quotes with double quotes, and unescape quotes
+                    json_str = json_match.group(1).replace('\n', '').replace("'", '"').replace('\\"', '"')
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
     
-    # If no valid JSON found, return None
+    # If all parsing attempts fail, return None
     return None
 
 def get_ai_context_length(ai_vendor: Literal["openai", "azure_openai", "anthropic"]):

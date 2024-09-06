@@ -18,12 +18,12 @@ class RequestLimits(BaseModel):
     provider: Literal["openai", "anthropic"] = Field(default="openai",description="The provider of the API")
 
 class ParallelAIUtilities:
-    def __init__(self, oai_request_limits: RequestLimits = RequestLimits(), anthropic_request_limits: RequestLimits = RequestLimits(provider="anthropic")):
+    def __init__(self, oai_request_limits: Optional[RequestLimits] = RequestLimits(), anthropic_request_limits: RequestLimits = RequestLimits(provider="anthropic")):
         load_dotenv()
         self.openai_key = os.getenv("OPENAI_KEY")
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        self.oai_request_limits = oai_request_limits
-        self.anthropic_request_limits = anthropic_request_limits
+        self.oai_request_limits = oai_request_limits if oai_request_limits else RequestLimits(max_requests_per_minute=500,max_tokens_per_minute=200000,provider="openai")
+        self.anthropic_request_limits = anthropic_request_limits if anthropic_request_limits else RequestLimits(max_requests_per_minute=50,max_tokens_per_minute=40000,provider="anthropic")
 
 
     async def run_parallel_ai_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:

@@ -364,6 +364,7 @@ class APIRequest:
             logging.warning(f"Request {self.task_id} failed with Exception {e}")
             status_tracker.num_other_errors += 1
             error = e
+
         if error:
             self.result.append(error)
             if self.attempts_left:

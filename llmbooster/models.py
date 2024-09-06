@@ -122,7 +122,7 @@ class LLMPromptContext(BaseModel):
     @computed_field
     @property
     def use_prefill(self) -> bool:
-        if self.llm_config.client == 'anthropic' and  self.llm_config.response_format == "json_beg":
+        if self.llm_config.client == 'anthropic' and  self.llm_config.response_format in ["json_beg", "structured_output","json_object"]:
 
             return True
         else:
@@ -263,6 +263,7 @@ class LLMOutput(BaseModel):
         assert isinstance(self.raw_result, ChatCompletion), "The result is not an OpenAI ChatCompletion"
         message = self.raw_result.choices[0].message
         content = message.content
+
         json_object = None
         usage = None
 
@@ -274,11 +275,12 @@ class LLMOutput(BaseModel):
                 json_object = GeneratedJsonObject(name=name, object=object_dict)
             except json.JSONDecodeError:
                 json_object = GeneratedJsonObject(name=name, object={"raw": tool_call.function.arguments})
-        elif content:
+        elif content is not None:
             parsed_json = self._parse_json_string(content)
             if parsed_json:
                 json_object = GeneratedJsonObject(name="parsed_content", object=parsed_json)
                 content = None  # Set content to None when we have a parsed JSON object
+
 
         if self.raw_result.usage:
             usage = Usage(
@@ -321,7 +323,6 @@ class LLMOutput(BaseModel):
 
     def _parse__dict(self) -> Tuple[Optional[str], Optional[GeneratedJsonObject], Optional[Usage]]:
         assert isinstance(self.raw_result, dict), "The result is not a dictionary"
-        print(self.raw_result)
         content = None
         json_object = None
         usage = None
@@ -329,14 +330,27 @@ class LLMOutput(BaseModel):
 
         if "model" in self.raw_result:
             provider = "openai" if "gpt" in self.raw_result["model"] else "anthropic"
-            print(f"provider: {provider} because model is {self.raw_result['model']}")
         else:
             raise ValueError("No model found in the result")
 
         if provider == "openai":
             first_choice = self.raw_result["choices"][0]
             if "message" in first_choice:
+                if first_choice["message"].get("tool_calls"):
+                    tool_call = first_choice["message"]["tool_calls"][0]
+                    name = tool_call["function"]["name"]
+                    try:
+                        object_dict = json.loads(tool_call["function"]["arguments"])
+                        json_object = GeneratedJsonObject(name=name, object=object_dict)
+                    except json.JSONDecodeError:
+                        json_object = GeneratedJsonObject(name=name, object={"raw": tool_call["function"]["arguments"]})
                 content = first_choice["message"].get("content")
+                if content is not None:
+                    parsed_json = self._parse_json_string(content)
+                    if parsed_json:
+                        json_object = GeneratedJsonObject(name="parsed_content", object=parsed_json)
+                        content = None  # Set content to None when we have a parsed JSON object
+
                 if "function_call" in first_choice["message"]:
                     func_call = first_choice["message"]["function_call"]
                     name = func_call["name"]
@@ -365,7 +379,6 @@ class LLMOutput(BaseModel):
         if "usage" in self.raw_result and provider is not None:
            
             usage_data = self.raw_result["usage"]
-            print("usage found",usage_data)
             if provider == "openai":
                 usage = Usage(
                     prompt_tokens=usage_data["prompt_tokens"],
@@ -380,7 +393,6 @@ class LLMOutput(BaseModel):
                     cache_creation_input_tokens=usage_data.get("cache_creation_input_tokens", None),
                     cache_read_input_tokens=usage_data.get("cache_read_input_tokens", None)
                 )
-        print(f"content: {content}, json_object: {json_object}, usage: {usage}")
 
         return content, json_object, usage
 

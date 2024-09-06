@@ -30,13 +30,16 @@ class ParallelAIUtilities:
         openai_prompts = [p for p in prompts if p.llm_config.client == "openai"]
         anthropic_prompts = [p for p in prompts if p.llm_config.client == "anthropic"]
 
-        results = []
+        tasks = []
         if openai_prompts:
-            results.extend(await self._run_openai_completion(openai_prompts))
+            tasks.append(self._run_openai_completion(openai_prompts))
         if anthropic_prompts:
-            results.extend(await self._run_anthropic_completion(anthropic_prompts))
+            tasks.append(self._run_anthropic_completion(anthropic_prompts))
 
-        return results
+        results = await asyncio.gather(*tasks)
+        
+        # Flatten the results list
+        return [item for sublist in results for item in sublist]
 
     async def _run_openai_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:
         timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -144,7 +147,6 @@ class ParallelAIUtilities:
             for line, original_prompt in zip(f, original_prompts):
                 try:
                     result = json.loads(line)
-                    print(f"Debug: Raw result from file: {result}")  # Debug print
                     llm_output = self._convert_result_to_llm_output(result, original_prompt)
                     results.append(llm_output)
                 except json.JSONDecodeError:
@@ -157,9 +159,7 @@ class ParallelAIUtilities:
 
     def _convert_result_to_llm_output(self, result: List[Dict[str, Any]], original_prompt: LLMPromptContext) -> LLMOutput:
         request_data, response_data = result
-        print(f"Debug: Converting result to LLMOutput")
-        print(f"Debug: Request data: {request_data}")
-        print(f"Debug: Response data: {response_data}")
+
         
         if original_prompt.llm_config.client == "openai":
             return LLMOutput(raw_result=response_data, completion_kwargs=request_data)
@@ -167,7 +167,6 @@ class ParallelAIUtilities:
             # Convert Anthropic response format to match LLMOutput expectations
             return LLMOutput(raw_result=response_data, completion_kwargs=request_data)
         else:
-            print(f"Debug: Unexpected client type: {original_prompt.llm_config.client}")
             return LLMOutput(raw_result={"error": "Unexpected client type"}, completion_kwargs=request_data)
 
 \

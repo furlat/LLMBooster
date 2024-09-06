@@ -2,6 +2,7 @@ import asyncio
 from dotenv import load_dotenv
 from parallel_inference import ParallelAIUtilities
 from models import LLMPromptContext, LLMConfig, StructuredTool
+from typing import Literal, List
 
 async def main():
     load_dotenv()
@@ -24,7 +25,7 @@ async def main():
     )
 
     # Create prompts for different JSON modes and tool usage
-    def create_prompts(client, model, response_formats, count=5):
+    def create_prompts(client, model, response_formats : List[Literal["json_beg", "text","json_object","structured_output","tool"]]= ["text"], count=5):
         prompts = []
         for response_format in response_formats:
             for i in range(count):
@@ -41,15 +42,15 @@ async def main():
         return prompts
 
     # OpenAI prompts
-    openai_prompts = create_prompts("openai", "gpt-4o-2024-08-06", [ "tool"])
+    openai_prompts = create_prompts("openai", "gpt-4o-2024-08-06",["json_beg", "text","json_object","structured_output","tool"])
 
     # Anthropic prompts
-    anthropic_prompts = create_prompts("anthropic", "claude-3-5-sonnet-20240620", [ "tool"])
+    anthropic_prompts = create_prompts("anthropic", "claude-3-5-sonnet-20240620", ["json_beg", "text","json_object","structured_output","tool"])
 
     # Run parallel completions
     print("Running parallel completions...")
     all_prompts = openai_prompts + anthropic_prompts
-    all_prompts=anthropic_prompts
+    # all_prompts=anthropic_prompts
     completion_results = await parallel_ai.run_parallel_ai_completion(all_prompts)
 
     # Print results

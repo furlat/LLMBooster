@@ -18,13 +18,13 @@ class RequestLimits(BaseModel):
     provider: Literal["openai", "anthropic"] = Field(default="openai",description="The provider of the API")
 
 class ParallelAIUtilities:
-    def __init__(self, oai_request_limits: Optional[RequestLimits] = RequestLimits(), anthropic_request_limits: RequestLimits = RequestLimits(provider="anthropic")):
+    def __init__(self, oai_request_limits: Optional[RequestLimits] = RequestLimits(), anthropic_request_limits: RequestLimits = RequestLimits(provider="anthropic"), local_cache: bool = True):
         load_dotenv()
         self.openai_key = os.getenv("OPENAI_KEY")
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         self.oai_request_limits = oai_request_limits if oai_request_limits else RequestLimits(max_requests_per_minute=500,max_tokens_per_minute=200000,provider="openai")
         self.anthropic_request_limits = anthropic_request_limits if anthropic_request_limits else RequestLimits(max_requests_per_minute=50,max_tokens_per_minute=40000,provider="anthropic")
-
+        self.local_cache = local_cache
 
     async def run_parallel_ai_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:
         openai_prompts = [p for p in prompts if p.llm_config.client == "openai"]
@@ -47,8 +47,12 @@ class ParallelAIUtilities:
         results_file = f'openai_results_{timestamp}.jsonl'
         config = self._create_oai_completion_config(prompts[0], requests_file, results_file)
         if config:
-            await process_api_requests_from_file(config)
-            return self._parse_results_file(results_file, prompts)
+            try:
+                await process_api_requests_from_file(config)
+                return self._parse_results_file(results_file, prompts)
+            finally:
+                if not self.local_cache:
+                    self._delete_files(requests_file, results_file)
         return []
 
     async def _run_anthropic_completion(self, prompts: List[LLMPromptContext]) -> List[LLMOutput]:
@@ -57,8 +61,12 @@ class ParallelAIUtilities:
         results_file = f'anthropic_results_{timestamp}.jsonl'
         config = self._create_anthropic_completion_config(prompts[0], requests_file, results_file)
         if config:
-            await process_api_requests_from_file(config)
-            return self._parse_results_file(results_file, prompts)
+            try:
+                await process_api_requests_from_file(config)
+                return self._parse_results_file(results_file, prompts)
+            finally:
+                if not self.local_cache:
+                    self._delete_files(requests_file, results_file)
         return []
 
     def _prepare_requests_file(self, prompts: List[LLMPromptContext], client: str) -> str:
@@ -168,6 +176,13 @@ class ParallelAIUtilities:
             return LLMOutput(raw_result=response_data, completion_kwargs=request_data)
         else:
             return LLMOutput(raw_result={"error": "Unexpected client type"}, completion_kwargs=request_data)
+
+    def _delete_files(self, *files):
+        for file in files:
+            try:
+                os.remove(file)
+            except OSError as e:
+                print(f"Error deleting file {file}: {e}")
 
 \
 
